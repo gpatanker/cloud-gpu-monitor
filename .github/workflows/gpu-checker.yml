@@ -22,6 +22,8 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        python -c "import sys; print('Python executable:', sys.executable); print('Python version:', sys.version)"
+        pip list
     
     - name: Set up GCP credentials
       uses: google-github-actions/auth@v1
@@ -43,18 +45,75 @@ jobs:
         echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> .env
         echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" >> .env
         echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" >> .env
-        echo "DEBUG=False" >> .env
+        echo "DEBUG=True" >> .env
+        
+    - name: Check file structure
+      run: |
+        echo "Current directory: $(pwd)"
+        echo "Files in current directory:"
+        ls -la
+        echo "Files in checkers directory (if exists):"
+        ls -la checkers/ || echo "Checkers directory not found"
         
     - name: Run AWS capacity checker
-      run: python checkers/aws_capacity_checker.py
+      run: |
+        echo "Running AWS capacity checker..."
+        python checkers/aws_capacity_checker.py
+        echo "AWS script exit code: $?"
       continue-on-error: true
       
     - name: Run Azure capacity checker
-      run: python checkers/azure_capacity_checker.py
+      run: |
+        echo "Running Azure capacity checker..."
+        python checkers/azure_capacity_checker.py
+        echo "Azure script exit code: $?"
       continue-on-error: true
       
     - name: Run GCP capacity checker
-      run: python checkers/gcp_capacity_checker.py
+      run: |
+        echo "Running GCP capacity checker..."
+        python checkers/gcp_capacity_checker.py
+        echo "GCP script exit code: $?"
+      continue-on-error: true
+      
+    - name: Database connectivity test
+      if: always()
+      run: |
+        echo "Testing database connectivity..."
+        python -c "
+        import mysql.connector
+        import os
+        from dotenv import load_dotenv
+        
+        load_dotenv()
+        
+        db_config = {
+            'host': os.getenv('MYSQL_HOST'),
+            'port': os.getenv('MYSQL_PORT', '3306'),
+            'user': os.getenv('MYSQL_USER'),
+            'password': os.getenv('MYSQL_PASSWORD'),
+            'database': os.getenv('MYSQL_DATABASE')
+        }
+        
+        print('Connecting to:', db_config['host'])
+        
+        try:
+            conn = mysql.connector.connect(**db_config)
+            print('Connection successful!')
+            cursor = conn.cursor()
+            cursor.execute('SHOW TABLES')
+            tables = cursor.fetchall()
+            print('Available tables:')
+            for table in tables:
+                print(f'- {table[0]}')
+                cursor.execute(f'SELECT COUNT(*) FROM {table[0]}')
+                count = cursor.fetchone()[0]
+                print(f'  Records: {count}')
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f'Error connecting to database: {e}')
+        "
       continue-on-error: true
       
     - name: Report completion
