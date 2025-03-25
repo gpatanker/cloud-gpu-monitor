@@ -1,0 +1,63 @@
+name: Cloud GPU Capacity Checker
+
+on:
+  schedule:
+    - cron: '0 13 * * *'  # Run every day at 1:00 PM UTC
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  run-capacity-checker:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Set up GCP credentials
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+        export_environment_variables: true
+    
+    - name: Create .env file
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" > .env
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+        echo "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> .env
+        echo "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> .env
+        echo "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> .env
+        echo "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> .env
+        echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" >> .env
+        echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> .env
+        echo "MYSQL_PORT=${{ secrets.MYSQL_PORT }}" >> .env
+        echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> .env
+        echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" >> .env
+        echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" >> .env
+        echo "DEBUG=False" >> .env
+        
+    - name: Run AWS capacity checker
+      run: python checkers/aws_capacity_checker.py
+      continue-on-error: true
+      
+    - name: Run Azure capacity checker
+      run: python checkers/azure_capacity_checker.py
+      continue-on-error: true
+      
+    - name: Run GCP capacity checker
+      run: python checkers/gcp_capacity_checker.py
+      continue-on-error: true
+      
+    - name: Report completion
+      if: always()
+      run: |
+        echo "GPU Checker job completed at $(date)"

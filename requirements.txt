@@ -1,0 +1,8 @@
+boto3==1.28.62
+python-dotenv==1.0.0
+mysql-connector-python==8.1.0
+azure-identity==1.15.0
+azure-mgmt-compute==30.3.0
+google-cloud-compute==1.13.0
+google-api-python-client==2.107.0
+requests==2.31.0
