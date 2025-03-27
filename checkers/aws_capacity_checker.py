@@ -24,12 +24,21 @@ logging.basicConfig(
 logger = logging.getLogger('aws_capacity_checker')
 
 # MySQL database configuration
+# DB_CONFIG = {
+#     'host': os.getenv('MYSQL_HOST', 'localhost'),
+#     'user': os.getenv('MYSQL_USER', 'root'),
+#     'password': os.getenv('MYSQL_PASSWORD', ''),
+#     'database': os.getenv('MYSQL_DATABASE', 'cloud_capacity')
+# }
+
 DB_CONFIG = {
-    'host': os.getenv('MYSQL_HOST', 'localhost'),
-    'user': os.getenv('MYSQL_USER', 'root'),
-    'password': os.getenv('MYSQL_PASSWORD', ''),
-    'database': os.getenv('MYSQL_DATABASE', 'cloud_capacity')
+    'host': os.getenv('MYSQL_HOST'),  # This should be the full RDS endpoint
+    'user': os.getenv('MYSQL_USER'),  # Your RDS master username
+    'password': os.getenv('MYSQL_PASSWORD').strip("'"),
+    'database': os.getenv('MYSQL_DATABASE'),
+    'port': int(os.getenv('MYSQL_PORT', 3306))
 }
+
 
 def log_debug(message):
     """Helper function for debug logging"""
