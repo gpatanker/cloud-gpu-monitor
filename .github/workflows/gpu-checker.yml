@@ -1,3 +1,126 @@
+# name: Cloud GPU Capacity Checker
+
+# on:
+#   schedule:
+#     - cron: '0 13 * * *'  # Run every day at 1:00 PM UTC
+#   workflow_dispatch:  # Allow manual triggering
+
+# jobs:
+#   run-capacity-checker:
+#     runs-on: ubuntu-latest
+    
+#     steps:
+#     - name: Check out repository
+#       uses: actions/checkout@v3
+      
+#     - name: Set up Python
+#       uses: actions/setup-python@v4
+#       with:
+#         python-version: '3.10'
+        
+#     - name: Install dependencies
+#       run: |
+#         python -m pip install --upgrade pip
+#         pip install -r requirements.txt
+#         python -c "import sys; print('Python executable:', sys.executable); print('Python version:', sys.version)"
+#         pip list
+    
+#     - name: Set up GCP credentials
+#       uses: google-github-actions/auth@v1
+#       with:
+#         credentials_json: ${{ secrets.GCP_SA_KEY }}
+#         export_environment_variables: true
+    
+#     - name: Create .env file
+#       run: |
+#         echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" > .env
+#         echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+#         echo "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> .env
+#         echo "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> .env
+#         echo "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> .env
+#         echo "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> .env
+#         echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" >> .env
+#         echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> .env
+#         echo "MYSQL_PORT=${{ secrets.MYSQL_PORT }}" >> .env
+#         echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> .env
+#         echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" >> .env
+#         echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" >> .env
+#         echo "DEBUG=True" >> .env
+        
+#     - name: Check file structure
+#       run: |
+#         echo "Current directory: $(pwd)"
+#         echo "Files in current directory:"
+#         ls -la
+#         echo "Files in checkers directory (if exists):"
+#         ls -la checkers/ || echo "Checkers directory not found"
+        
+#     - name: Run AWS capacity checker
+#       run: |
+#         echo "Running AWS capacity checker..."
+#         python checkers/aws_capacity_checker.py
+#         echo "AWS script exit code: $?"
+#       continue-on-error: true
+      
+#     - name: Run Azure capacity checker
+#       run: |
+#         echo "Running Azure capacity checker..."
+#         python checkers/azure_capacity_checker.py
+#         echo "Azure script exit code: $?"
+#       continue-on-error: true
+      
+#     - name: Run GCP capacity checker
+#       run: |
+#         echo "Running GCP capacity checker..."
+#         python checkers/gcp_capacity_checker.py
+#         echo "GCP script exit code: $?"
+#       continue-on-error: true
+      
+#     - name: Database connectivity test
+#       if: always()
+#       run: |
+#         echo "Testing database connectivity..."
+#         python -c "
+#         import mysql.connector
+#         import os
+#         from dotenv import load_dotenv
+        
+#         load_dotenv()
+        
+#         db_config = {
+#             'host': os.getenv('MYSQL_HOST'),
+#             'port': os.getenv('MYSQL_PORT', '3306'),
+#             'user': os.getenv('MYSQL_USER'),
+#             'password': os.getenv('MYSQL_PASSWORD'),
+#             'database': os.getenv('MYSQL_DATABASE')
+#         }
+        
+#         print('Connecting to:', db_config['host'])
+        
+#         try:
+#             conn = mysql.connector.connect(**db_config)
+#             print('Connection successful!')
+#             cursor = conn.cursor()
+#             cursor.execute('SHOW TABLES')
+#             tables = cursor.fetchall()
+#             print('Available tables:')
+#             for table in tables:
+#                 print(f'- {table[0]}')
+#                 cursor.execute(f'SELECT COUNT(*) FROM {table[0]}')
+#                 count = cursor.fetchone()[0]
+#                 print(f'  Records: {count}')
+#             cursor.close()
+#             conn.close()
+#         except Exception as e:
+#             print(f'Error connecting to database: {e}')
+#         "
+#       continue-on-error: true
+      
+#     - name: Report completion
+#       if: always()
+#       run: |
+#         echo "GPU Checker job completed at $(date)"
+
 name: Cloud GPU Capacity Checker
 
 on:
@@ -54,8 +177,118 @@ jobs:
         ls -la
         echo "Files in checkers directory (if exists):"
         ls -la checkers/ || echo "Checkers directory not found"
+    
+    - name: Enhanced database connectivity test
+      run: |
+        echo "Testing database connectivity with verbose logging..."
+        python -c "
+        import mysql.connector
+        import os
+        import socket
+        import time
+        from dotenv import load_dotenv
+        
+        load_dotenv()
+        
+        # Print environment info without exposing credentials
+        print('Environment variables (partial):')
+        for key in ['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_DATABASE']:
+            print(f'{key}: {os.getenv(key)}')
+        
+        # Test DNS resolution
+        host = os.getenv('MYSQL_HOST')
+        print(f'Resolving DNS for {host}...')
+        try:
+            ip = socket.gethostbyname(host)
+            print(f'Resolved to IP: {ip}')
+        except Exception as e:
+            print(f'DNS resolution failed: {e}')
+        
+        # Test basic connectivity first
+        print(f'Attempting to connect to host {host} on port {os.getenv(\"MYSQL_PORT\", \"3306\")}...')
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(10)
+            result = s.connect_ex((host, int(os.getenv('MYSQL_PORT', '3306'))))
+            if result == 0:
+                print('Port is open - basic connectivity successful')
+            else:
+                print(f'Port is closed or filtered. Error code: {result}')
+            s.close()
+        except Exception as e:
+            print(f'Socket connection error: {e}')
+        
+        # Test database connection with multiple attempts and increased timeouts
+        db_config = {
+            'host': os.getenv('MYSQL_HOST'),
+            'port': int(os.getenv('MYSQL_PORT', '3306')),
+            'user': os.getenv('MYSQL_USER'),
+            'password': os.getenv('MYSQL_PASSWORD'),
+            'database': os.getenv('MYSQL_DATABASE'),
+            'connect_timeout': 60,  # Increased timeout
+            'use_pure': True,       # Use pure Python implementation
+        }
+        
+        # Try with and without SSL
+        connection_attempts = [
+            {'name': 'Default connection', 'config': db_config.copy()},
+            {'name': 'Connection with SSL', 'config': {**db_config, 'ssl_ca': '/etc/ssl/certs/ca-certificates.crt'}},
+            {'name': 'Connection without SSL verification', 'config': {**db_config, 'ssl_verify_cert': False}},
+            {'name': 'Connection with charset', 'config': {**db_config, 'charset': 'utf8mb4'}}
+        ]
+        
+        success = False
+        for attempt in connection_attempts:
+            print(f'\\nAttempting MySQL connection with: {attempt[\"name\"]}')
+            try:
+                print(f'Connecting to {attempt[\"config\"][\"host\"]}:{attempt[\"config\"][\"port\"]}...')
+                conn = mysql.connector.connect(**attempt['config'])
+                print('Connection successful!')
+                cursor = conn.cursor()
+                cursor.execute('SHOW TABLES')
+                tables = cursor.fetchall()
+                print('Available tables:')
+                for table in tables:
+                    print(f'- {table[0]}')
+                cursor.close()
+                conn.close()
+                success = True
+                print(f'Successfully connected using {attempt[\"name\"]}')
+                break
+            except Exception as e:
+                print(f'Connection error with {attempt[\"name\"]}: {str(e)}')
+        
+        if not success:
+            print('\\nAll connection attempts failed.')
+            print('Trying one more approach with a manual retry loop:')
+            
+            max_retries = 3
+            retry_delay = 5  # seconds
+            
+            for retry in range(max_retries):
+                try:
+                    print(f'Retry attempt {retry+1}/{max_retries}')
+                    conn = mysql.connector.connect(
+                        host=os.getenv('MYSQL_HOST'),
+                        port=int(os.getenv('MYSQL_PORT', '3306')),
+                        user=os.getenv('MYSQL_USER'),
+                        password=os.getenv('MYSQL_PASSWORD'),
+                        database=os.getenv('MYSQL_DATABASE'),
+                        connect_timeout=30
+                    )
+                    print('Retry connection successful!')
+                    conn.close()
+                    break
+                except Exception as e:
+                    print(f'Retry attempt {retry+1} failed: {e}')
+                    if retry < max_retries - 1:
+                        print(f'Waiting {retry_delay} seconds before next attempt...')
+                        time.sleep(retry_delay)
+        "
+      continue-on-error: true
         
     - name: Run AWS capacity checker
+      if: ${{ false }}  # Temporarily disabled; remove to enable
       run: |
         echo "Running AWS capacity checker..."
         python checkers/aws_capacity_checker.py
@@ -63,6 +296,7 @@ jobs:
       continue-on-error: true
       
     - name: Run Azure capacity checker
+      if: ${{ false }}  # Temporarily disabled; remove to enable
       run: |
         echo "Running Azure capacity checker..."
         python checkers/azure_capacity_checker.py
@@ -70,49 +304,44 @@ jobs:
       continue-on-error: true
       
     - name: Run GCP capacity checker
+      if: ${{ false }}  # Temporarily disabled; remove to enable
       run: |
         echo "Running GCP capacity checker..."
         python checkers/gcp_capacity_checker.py
         echo "GCP script exit code: $?"
       continue-on-error: true
       
-    - name: Database connectivity test
+    - name: Test direct connection with secrets
       if: always()
       run: |
-        echo "Testing database connectivity..."
+        echo "Testing direct connection using GitHub secrets..."
         python -c "
         import mysql.connector
-        import os
-        from dotenv import load_dotenv
+        import time
         
-        load_dotenv()
-        
+        # Configure connection without using .env
         db_config = {
-            'host': os.getenv('MYSQL_HOST'),
-            'port': os.getenv('MYSQL_PORT', '3306'),
-            'user': os.getenv('MYSQL_USER'),
-            'password': os.getenv('MYSQL_PASSWORD'),
-            'database': os.getenv('MYSQL_DATABASE')
+            'host': '${{ secrets.MYSQL_HOST }}',
+            'port': int('${{ secrets.MYSQL_PORT }}'),
+            'user': '${{ secrets.MYSQL_USER }}',
+            'password': '${{ secrets.MYSQL_PASSWORD }}',
+            'database': '${{ secrets.MYSQL_DATABASE }}',
+            'connect_timeout': 60
         }
         
-        print('Connecting to:', db_config['host'])
+        print(f'Connecting directly to {db_config[\"host\"]}:{db_config[\"port\"]}...')
         
-        try:
-            conn = mysql.connector.connect(**db_config)
-            print('Connection successful!')
-            cursor = conn.cursor()
-            cursor.execute('SHOW TABLES')
-            tables = cursor.fetchall()
-            print('Available tables:')
-            for table in tables:
-                print(f'- {table[0]}')
-                cursor.execute(f'SELECT COUNT(*) FROM {table[0]}')
-                count = cursor.fetchone()[0]
-                print(f'  Records: {count}')
-            cursor.close()
-            conn.close()
-        except Exception as e:
-            print(f'Error connecting to database: {e}')
+        # Try multiple attempts
+        for attempt in range(3):
+            try:
+                print(f'Attempt {attempt+1}/3...')
+                conn = mysql.connector.connect(**db_config)
+                print('Direct connection successful!')
+                conn.close()
+                break
+            except Exception as e:
+                print(f'Direct connection error: {e}')
+                time.sleep(5)
         "
       continue-on-error: true
       
