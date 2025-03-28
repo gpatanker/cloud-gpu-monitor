@@ -10,6 +10,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 import logging
 import re
+import requests
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -656,75 +658,70 @@ def check_gpu_availability_for_region(region):
     return results
 
 def save_to_mysql(results):
-    """Save the results to MySQL database"""
+    """Save the results to MySQL database via API proxy"""
+    if not results:
+        log_info("No results to save to database")
+        return
+    
     try:
-        # Connect to MySQL database
-        conn = mysql.connector.connect(**DB_CONFIG)
-        cursor = conn.cursor()
+        # Get API endpoint details from environment
+        api_url = os.getenv('DB_API_URL')
+        api_key = os.getenv('DB_API_KEY')
         
-        # Prepare SQL statement
-        sql = """
-        INSERT INTO azure_gpu_instances (
-            vm_size, region, available, offered_in_region, 
-            price_per_hour, spot_available, spot_price, gpu_type, 
-            gpu_memory, gpu_count, vcpus, memory_gb, check_time
-        ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-        )
-        """
+        if not api_url or not api_key:
+            log_error("Missing DB_API_URL or DB_API_KEY environment variables")
+            return
+            
+        # Provider type for this script
+        provider = "azure"
         
-        # Process each result
-        records_inserted = 0
+        # Convert results to a format suitable for API
+        formatted_results = []
         for result in results:
-            # Convert ISO format datetime string to MySQL datetime
-            check_time = datetime.fromisoformat(result.get('check_time')).strftime('%Y-%m-%d %H:%M:%S')
+            # Make a copy to avoid modifying the original data
+            formatted_result = result.copy()
             
-            # Round prices to 2 decimal places if they exist
-            price_per_hour = result.get('price_per_hour')
-            if price_per_hour is not None:
-                price_per_hour = round(price_per_hour * 100) / 100
-                
-            spot_price = result.get('spot_price')
-            if spot_price is not None:
-                spot_price = round(spot_price * 100) / 100
+            # Format timestamps
+            if 'check_time' in formatted_result and not isinstance(formatted_result['check_time'], str):
+                formatted_result['check_time'] = datetime.fromisoformat(formatted_result['check_time']).strftime('%Y-%m-%d %H:%M:%S')
             
-            # Prepare values tuple
-            values = (
-                result.get('vm_size'),
-                result.get('region'),
-                result.get('available', False),
-                result.get('offered_in_region', False),
-                price_per_hour,
-                result.get('spot_available'),
-                spot_price,
-                result.get('gpu_type'),
-                result.get('gpu_memory'),
-                result.get('gpu_count'),
-                result.get('vcpus'),
-                result.get('memory_gb'),
-                check_time
-            )
+            # Ensure numeric values are properly formatted
+            for field in ['price_per_hour', 'spot_price', 'gpu_count', 'vcpus', 'memory_gb']:
+                if field in formatted_result and formatted_result[field] is not None:
+                    formatted_result[field] = float(formatted_result[field]) if '.' in str(formatted_result[field]) else int(formatted_result[field])
             
-            try:
-                # Execute query
-                cursor.execute(sql, values)
-                records_inserted += 1
-            except mysql.connector.Error as e:
-                log_error(f"Error inserting record for {result.get('vm_size')} in {result.get('region')}: {e}")
+            # Ensure boolean values are proper booleans
+            for field in ['available', 'offered_in_region', 'spot_available']:
+                if field in formatted_result:
+                    formatted_result[field] = bool(formatted_result[field])
+                    
+            # Add the result to formatted results
+            formatted_results.append(formatted_result)
         
-        # Commit transaction
-        conn.commit()
-        log_info(f"Successfully inserted {records_inserted} records into MySQL database.")
+        # Prepare request payload
+        payload = {
+            'operation': 'insert_gpu_data',
+            'provider': provider,
+            'data': formatted_results
+        }
         
-    except mysql.connector.Error as e:
-        log_error(f"Error saving to MySQL: {e}")
-        if 'conn' in locals() and conn.is_connected():
-            conn.rollback()
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'conn' in locals() and conn.is_connected():
-            conn.close()
+        # Send data to API
+        response = requests.post(
+            api_url,
+            headers={'x-api-key': api_key},
+            json=payload,
+            timeout=30
+        )
+        
+        # Check response
+        if response.status_code == 200:
+            result = response.json()
+            log_info(f"Successfully inserted {result.get('inserted_count', 0)} Azure records via API")
+        else:
+            log_error(f"API error: {response.status_code} - {response.text}")
+            
+    except Exception as e:
+        log_error(f"Error saving to database via API: {e}")
 
 def main():
     """Main function to check GPU availability across regions and save to MySQL"""
