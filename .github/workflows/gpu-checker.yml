@@ -11,10 +11,10 @@ jobs:
     
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
         
@@ -26,7 +26,7 @@ jobs:
         pip list
     
     - name: Set up GCP credentials
-      uses: google-github-actions/auth@v1
+      uses: google-github-actions/auth@v2
       with:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
         export_environment_variables: true
@@ -40,65 +40,27 @@ jobs:
         echo "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> .env
         echo "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> .env
         echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" >> .env
-        echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> .env
-        echo "MYSQL_PORT=${{ secrets.MYSQL_PORT }}" >> .env
-        echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> .env
-        echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" >> .env
-        echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" >> .env
+        echo "DB_API_URL=${{ secrets.DB_API_URL }}" >> .env
+        echo "DB_API_KEY=${{ secrets.DB_API_KEY }}" >> .env
         echo "DEBUG=True" >> .env
         
-    - name: Check file structure
-      run: |
-        echo "Current directory: $(pwd)"
-        echo "Files in current directory:"
-        ls -la
-        echo "Files in checkers directory (if exists):"
-        ls -la checkers/ || echo "Checkers directory not found"
-    
     - name: Verify database connection
       run: |
-        echo "Testing database connectivity..."
         python -c "
-        import mysql.connector
+        import requests
         import os
-        import time
-        from dotenv import load_dotenv
         
-        load_dotenv()
+        response = requests.post(
+            os.environ['DB_API_URL'],
+            headers={'x-api-key': os.environ['DB_API_KEY']},
+            json={'operation': 'verify_database'}
+        )
         
-        # Print environment info without exposing credentials
-        print('Environment variables (partial):')
-        for key in ['MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_DATABASE']:
-            print(f'{key}: {os.getenv(key)}')
+        result = response.json()
+        print(f'Database connection test: {result}')
         
-        # Test database connection
-        db_config = {
-            'host': os.getenv('MYSQL_HOST'),
-            'port': int(os.getenv('MYSQL_PORT', '3306')),
-            'user': os.getenv('MYSQL_USER'),
-            'password': os.getenv('MYSQL_PASSWORD'),
-            'database': os.getenv('MYSQL_DATABASE'),
-            'connect_timeout': 60
-        }
-        
-        print(f'Connecting to {db_config[\"host\"]}:{db_config[\"port\"]}...')
-        try:
-            conn = mysql.connector.connect(**db_config)
-            print('Connection successful!')
-            cursor = conn.cursor()
-            cursor.execute('SHOW TABLES')
-            tables = cursor.fetchall()
-            print('Available tables:')
-            for table in tables:
-                print(f'- {table[0]}')
-                cursor.execute(f'SELECT COUNT(*) FROM {table[0]}')
-                count = cursor.fetchone()[0]
-                print(f'  Records: {count}')
-            cursor.close()
-            conn.close()
-        except Exception as e:
-            print(f'Connection error: {e}')
-            raise
+        if response.status_code != 200:
+            raise Exception(f'Database connection failed: {result}')
         "
       
     - name: Run AWS capacity checker
