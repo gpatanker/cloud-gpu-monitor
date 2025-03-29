@@ -11,75 +11,88 @@ jobs:
     
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
       
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v4
       with:
         python-version: '3.10'
         
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests python-dotenv
+        pip install -r requirements.txt
+        python -c "import sys; print('Python executable:', sys.executable); print('Python version:', sys.version)"
         pip list
     
-    - name: Verify database connection
-      run: |
-        python3 -c "
-        import os
-        import requests
-        
-        # Database connection test
-        db_api_url = '${{ secrets.DB_API_URL }}'
-        db_api_key = '${{ secrets.DB_API_KEY }}'
-        
-        print('Attempting Database Connection:')
-        print(f'API Endpoint: {db_api_url}')
-        
-        response = requests.post(
-            db_api_url,
-            headers={'x-api-key': db_api_key},
-            json={'operation': 'verify_database'}
-        )
-        
-        print('Response Details:')
-        print(f'Status Code: {response.status_code}')
-        print('Response Headers:')
-        for header, value in response.headers.items():
-            print(f'{header}: {value}')
-        
-        print('\nResponse Body:')
-        try:
-            result = response.json()
-            print(result)
-        except ValueError:
-            print('Response is not JSON:')
-            print(response.text)
-        
-        # Raise an exception if the request was not successful
-        response.raise_for_status()
-        "
-      
-    - name: Create .env file
-      run: |
-        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" > .env
-        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
-        echo "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> .env
-        echo "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> .env
-        echo "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> .env
-        echo "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> .env
-        echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" >> .env
-        echo "DB_API_URL=${{ secrets.DB_API_URL }}" >> .env
-        echo "DB_API_KEY=${{ secrets.DB_API_KEY }}" >> .env
-        echo "DEBUG=True" >> .env
-    
     - name: Set up GCP credentials
-      uses: google-github-actions/auth@v2
+      uses: google-github-actions/auth@v1
       with:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
         export_environment_variables: true
     
+    - name: Create .env file
+      run: |
+        cat > .env << 'EOL'
+        AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
+        AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+        MYSQL_HOST=${{ secrets.MYSQL_HOST }}
+        MYSQL_PORT=${{ secrets.MYSQL_PORT }}
+        MYSQL_USER=${{ secrets.MYSQL_USER }}
+        MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+        MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+        DB_API_URL=${{ secrets.DB_API_URL }}
+        DB_API_KEY=${{ secrets.DB_API_KEY }}
+        DEBUG=True
+        EOL
+        echo "Created .env file with required variables"
+    
+    - name: Verify database connection
+      env:
+        MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+        MYSQL_PORT: ${{ secrets.MYSQL_PORT }}
+        MYSQL_USER: ${{ secrets.MYSQL_USER }}
+        MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+        MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+      run: |
+        echo "import mysql.connector
+        import os
+
+        # Use environment variables directly
+        db_config = {
+            'host': os.environ['MYSQL_HOST'],
+            'port': int(os.environ['MYSQL_PORT']),
+            'user': os.environ['MYSQL_USER'],
+            'password': os.environ['MYSQL_PASSWORD'],
+            'database': os.environ['MYSQL_DATABASE'],
+            'connect_timeout': 60
+        }
+
+        print(f\"Connecting to {db_config['host']}:{db_config['port']}...\")
+        try:
+            conn = mysql.connector.connect(**db_config)
+            print('Connection successful!')
+            cursor = conn.cursor()
+            cursor.execute('SHOW TABLES')
+            tables = cursor.fetchall()
+            print('Available tables:')
+            for table in tables:
+                print(f'- {table[0]}')
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f'Connection error: {e}')
+            exit(1)
+        " > db_check.py
+        
+        # Execute the script
+        python db_check.py
+      
     - name: Run AWS capacity checker
       run: |
         echo "Running AWS capacity checker..."
