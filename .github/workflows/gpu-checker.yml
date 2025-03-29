@@ -56,24 +56,37 @@ jobs:
         echo "Verifying .env file contents (excluding sensitive values):"
         grep -v -E 'PASSWORD|SECRET|KEY' .env || echo "No matching content found in .env"
         
-    - name: Verify database connection
-      run: |
-        python -c "
-        import requests
-        import json
-        import os
-        
-        response = requests.post(
-            os.environ['DB_API_URL'],
-            headers={'x-api-key': os.environ['DB_API_KEY']},
-            json={'operation': 'verify_database'}
-        )
-        
-        result = response.json()
-        print(f'Database connection test: {result}')
-        
-        if response.status_code != 200:
-            raise Exception(f'Database connection failed: {result}')
+        - name: Verify database connection
+        run: |
+          echo "Testing database connectivity directly with GitHub secrets..."
+          python -c "
+        import mysql.connector
+        import time
+      
+        # Configure connection directly from GitHub secrets
+        db_config = {
+        'host': '${{ secrets.MYSQL_HOST }}',
+        'port': int('${{ secrets.MYSQL_PORT }}'),
+        'user': '${{ secrets.MYSQL_USER }}',
+        'password': '${{ secrets.MYSQL_PASSWORD }}',
+        'database': '${{ secrets.MYSQL_DATABASE }}',
+        'connect_timeout': 60}
+      
+        print(f'Connecting to {db_config[\"host\"]}:{db_config[\"port\"]}...')
+        try:
+          conn = mysql.connector.connect(**db_config)
+          print('Connection successful!')
+          cursor = conn.cursor()
+          cursor.execute('SHOW TABLES')
+          tables = cursor.fetchall()
+          print('Available tables:')
+          for table in tables:
+              print(f'- {table[0]}')
+          cursor.close()
+          conn.close()
+        except Exception as e:
+          print(f'Connection error: {e}')
+        raise
         "
       
     - name: Run AWS capacity checker
