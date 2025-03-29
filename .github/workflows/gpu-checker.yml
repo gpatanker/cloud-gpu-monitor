@@ -38,54 +38,14 @@ jobs:
         echo "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> .env
         echo "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> .env
         echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" >> .env
+        echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> .env
+        echo "MYSQL_PORT=${{ secrets.MYSQL_PORT }}" >> .env
+        echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> .env
+        echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" >> .env
+        echo "MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}" >> .env
         echo "DB_API_URL=${{ secrets.DB_API_URL }}" >> .env
         echo "DB_API_KEY=${{ secrets.DB_API_KEY }}" >> .env
         echo "DEBUG=True" >> .env
-  
-        - name: Debug environment variables
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "Listing .env file:"
-          cat .env || echo ".env file not found!"
-          
-          echo "Environment variables set in GitHub:"
-          env | grep -v -E 'PASSWORD|SECRET|TOKEN|KEY' || echo "No environment variables found!"
-          
-          echo "Creating explicit debug variables:"
-          export DEBUG_API_URL="${{ secrets.DB_API_URL }}"
-          echo "Debug API URL (masked): ${DEBUG_API_URL:0:8}...${DEBUG_API_URL: -4}"
-          
-          echo "Testing direct secret access:"
-          python -c "
-          import os
-          
-          # Try directly from GitHub secrets
-          direct_url = '${{ secrets.DB_API_URL }}'
-          print(f'Direct secret access: ', 'Available' if direct_url else 'Not available')
-          
-          # Check if DB_API_URL is in environment
-          env_url = os.environ.get('DB_API_URL')
-          print(f'From os.environ: ', 'Available' if env_url else 'Not available')
-          "
-          
-          echo "Testing with dotenv:"
-          python -c "
-          import os
-          from dotenv import load_dotenv
-          
-          print('Before loading .env:')
-          print('DB_API_URL in env:', 'DB_API_URL' in os.environ)
-          
-          try:
-              load_dotenv(verbose=True)
-              print('Successfully loaded .env file')
-          except Exception as e:
-              print(f'Error loading .env: {e}')
-          
-          print('After loading .env:')
-          print('DB_API_URL in env:', 'DB_API_URL' in os.environ)
-          print('DB_API_URL value:', os.environ.get('DB_API_URL', 'Not found'))
-          "
       
     - name: Fix missing environment variables
       run: |
