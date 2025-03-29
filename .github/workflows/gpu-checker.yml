@@ -24,107 +24,62 @@ jobs:
         pip install requests python-dotenv
         pip list
     
-    - name: Comprehensive Environment and Secret Check
-      env:
-        DB_API_URL: ${{ secrets.DB_API_URL }}
-        DB_API_KEY: ${{ secrets.DB_API_KEY }}
+    - name: Verify database connection
       run: |
-        python3 - <<EOF
+        python3 -c "
         import os
-        
-        # Explicitly set environment variables
-        env_vars = {
-            'DB_API_URL': '${{ secrets.DB_API_URL }}',
-            'DB_API_KEY': '${{ secrets.DB_API_KEY }}'
-        }
-        
-        # Create .env file
-        with open('.env', 'w') as f:
-            for key, value in env_vars.items():
-                f.write(f"{key}={value}\n")
-        
-        # Verify .env file contents (without printing full secrets)
-        print("Created .env file:")
-        with open('.env', 'r') as f:
-            for line in f:
-                print(line.split('=')[0] + '=***REDACTED***')
-        
-        # Set environment variables
-        for key, value in env_vars.items():
-            os.environ[key] = value
-        EOF
-        
-    - name: Detailed Database Connection Test
-      run: |
-        python3 <<EOF
-        import os
-        import sys
-        import json
         import requests
-        from dotenv import load_dotenv
-        
-        # Explicitly load environment variables
-        load_dotenv('.env', override=True)
-        
-        # Detailed environment variable check
-        print("Python Environment Check:")
-        print("-" * 30)
-        print("Python Version:", sys.version)
-        print("Python Executable:", sys.executable)
-        print("\nEnvironment Variables:")
-        
-        # Safely print environment variables
-        env_vars = ['DB_API_URL', 'DB_API_KEY']
-        for var in env_vars:
-            value = os.getenv(var, 'NOT SET')
-            # Only print first 5 chars of non-empty values
-            print(f"{var}: {value[:5] + '...' if value and value != 'NOT SET' else value}")
         
         # Database connection test
-        db_api_url = os.getenv('DB_API_URL')
-        db_api_key = os.getenv('DB_API_KEY')
+        db_api_url = '${{ secrets.DB_API_URL }}'
+        db_api_key = '${{ secrets.DB_API_KEY }}'
         
-        if not db_api_url or not db_api_key:
-            print("\nError: Missing DB_API_URL or DB_API_KEY")
-            sys.exit(1)
+        print('Attempting Database Connection:')
+        print(f'API Endpoint: {db_api_url}')
         
-        print("\nAttempting Database Connection:")
-        print(f"API Endpoint: {db_api_url}")
+        response = requests.post(
+            db_api_url,
+            headers={'x-api-key': db_api_key},
+            json={'operation': 'verify_database'}
+        )
         
+        print('Response Details:')
+        print(f'Status Code: {response.status_code}')
+        print('Response Headers:')
+        for header, value in response.headers.items():
+            print(f'{header}: {value}')
+        
+        print('\nResponse Body:')
         try:
-            response = requests.post(
-                db_api_url,
-                headers={'x-api-key': db_api_key},
-                json={'operation': 'verify_database'},
-                timeout=30
-            )
-            
-            print("Response Details:")
-            print(f"Status Code: {response.status_code}")
-            print("Response Headers:")
-            for header, value in response.headers.items():
-                print(f"{header}: {value}")
-            
-            print("\nResponse Body:")
-            try:
-                result = response.json()
-                print(json.dumps(result, indent=2))
-            except ValueError:
-                print("Response is not JSON:")
-                print(response.text)
-            
-            if response.status_code != 200:
-                print(f"\nError: Unexpected status code {response.status_code}")
-                sys.exit(1)
+            result = response.json()
+            print(result)
+        except ValueError:
+            print('Response is not JSON:')
+            print(response.text)
         
-        except requests.exceptions.RequestException as e:
-            print(f"\nRequest Error: {e}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"\nUnexpected Error: {e}")
-            sys.exit(1)
-        EOF
+        # Raise an exception if the request was not successful
+        response.raise_for_status()
+        "
       
+    - name: Create .env file
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" > .env
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+        echo "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> .env
+        echo "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> .env
+        echo "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> .env
+        echo "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" >> .env
+        echo "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" >> .env
+        echo "DB_API_URL=${{ secrets.DB_API_URL }}" >> .env
+        echo "DB_API_KEY=${{ secrets.DB_API_KEY }}" >> .env
+        echo "DEBUG=True" >> .env
+    
+    - name: Set up GCP credentials
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+        export_environment_variables: true
+    
     - name: Run AWS capacity checker
       run: |
         echo "Running AWS capacity checker..."
