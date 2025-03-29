@@ -29,23 +29,30 @@ jobs:
         DB_API_URL: ${{ secrets.DB_API_URL }}
         DB_API_KEY: ${{ secrets.DB_API_KEY }}
       run: |
-        echo "Debugging GitHub Actions Environment:"
-        echo "----------------------------------------"
-        echo "Current directory: $(pwd)"
-        echo "Home directory: $HOME"
-        echo ""
-        echo "Checking Secrets:"
-        echo "DB_API_URL length: ${#DB_API_URL}"
-        echo "DB_API_KEY length: ${#DB_API_KEY}"
+        python3 - <<EOF
+        import os
+        
+        # Explicitly set environment variables
+        env_vars = {
+            'DB_API_URL': '${{ secrets.DB_API_URL }}',
+            'DB_API_KEY': '${{ secrets.DB_API_KEY }}'
+        }
         
         # Create .env file
-        echo "Creating .env file..."
-        echo "DB_API_URL=$DB_API_URL" > .env
-        echo "DB_API_KEY=$DB_API_KEY" >> .env
+        with open('.env', 'w') as f:
+            for key, value in env_vars.items():
+                f.write(f"{key}={value}\n")
         
         # Verify .env file contents (without printing full secrets)
-        echo "Verifying .env file:"
-        cat .env | sed 's/=.*$/=***REDACTED***/'
+        print("Created .env file:")
+        with open('.env', 'r') as f:
+            for line in f:
+                print(line.split('=')[0] + '=***REDACTED***')
+        
+        # Set environment variables
+        for key, value in env_vars.items():
+            os.environ[key] = value
+        EOF
         
     - name: Detailed Database Connection Test
       run: |
@@ -56,8 +63,8 @@ jobs:
         import requests
         from dotenv import load_dotenv
         
-        # Force load .env file
-        load_dotenv(override=True)
+        # Explicitly load environment variables
+        load_dotenv('.env', override=True)
         
         # Detailed environment variable check
         print("Python Environment Check:")
