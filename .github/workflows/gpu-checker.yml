@@ -1,78 +1,75 @@
 name: Cloud GPU Capacity Checker
-
 on:
   schedule:
-    - cron: '0 13 * * *'  # Run every day at 1:00 PM UTC
-  workflow_dispatch:  # Allow manual triggering
-
+    - cron: '0 13 * * *' # Run every day at 1:00 PM UTC
+  workflow_dispatch: # Allow manual triggering
 jobs:
   run-capacity-checker:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Check out repository
-      uses: actions/checkout@v3
+      - name: Check out repository
+        uses: actions/checkout@v3
       
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        python -c "import sys; print('Python executable:', sys.executable); print('Python version:', sys.version)"
-        pip list
-    
-    - name: Set up GCP credentials
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
-        export_environment_variables: true
-    
-    - name: Create .env file
-      run: |
-        cat > .env << 'EOL'
-        AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
-        AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
-        AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}
-        AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-        MYSQL_HOST=${{ secrets.MYSQL_HOST }}
-        MYSQL_PORT=${{ secrets.MYSQL_PORT }}
-        MYSQL_USER=${{ secrets.MYSQL_USER }}
-        MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-        MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
-        DB_API_URL=${{ secrets.DB_API_URL }}
-        DB_API_KEY=${{ secrets.DB_API_KEY }}
-        DEBUG=True
-        EOL
-        echo "Created .env file with required variables"
-        
-    - name: Verify database connection
-      env:
-        MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
-        MYSQL_PORT: ${{ secrets.MYSQL_PORT }}
-        MYSQL_USER: ${{ secrets.MYSQL_USER }}
-        MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-        MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
-      run: |
-        echo "import mysql.connector
-        import os
-        # Use environment variables directly
-        db_config = {
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -c "import sys; print('Python executable:', sys.executable); print('Python version:', sys.version)"
+          pip list
+      
+      - name: Set up GCP credentials
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          export_environment_variables: true
+      
+      - name: Create .env file
+        run: |
+          cat > .env << 'EOL'
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+          MYSQL_HOST=${{ secrets.MYSQL_HOST }}
+          MYSQL_PORT=${{ secrets.MYSQL_PORT }}
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+          DB_API_URL=${{ secrets.DB_API_URL }}
+          DB_API_KEY=${{ secrets.DB_API_KEY }}
+          DEBUG=True
+          EOL
+          echo "Created .env file with required variables"
+      
+      - name: Verify database connection
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_PORT: ${{ secrets.MYSQL_PORT }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          echo "import mysql.connector
+          import os
+          # Use environment variables directly
+          db_config = {
             'host': os.environ['MYSQL_HOST'],
             'port': int(os.environ['MYSQL_PORT']),
             'user': os.environ['MYSQL_USER'],
             'password': os.environ['MYSQL_PASSWORD'],
             'database': os.environ['MYSQL_DATABASE'],
             'connect_timeout': 60
-        }
-        print(f\"Connecting to {db_config['host']}:{db_config['port']}...\")
-        try:
+          }
+          print(f\"Connecting to {db_config['host']}:{db_config['port']}...\")
+          try:
             conn = mysql.connector.connect(**db_config)
             print('Connection successful!')
             cursor = conn.cursor()
@@ -80,38 +77,135 @@ jobs:
             tables = cursor.fetchall()
             print('Available tables:')
             for table in tables:
-                print(f'- {table[0]}')
+              print(f'- {table[0]}')
             cursor.close()
             conn.close()
-        except Exception as e:
+          except Exception as e:
             print(f'Connection error: {e}')
             exit(1)
-        " > db_check.py
-        # Execute the script
-        python db_check.py
+          " > db_check.py
+          # Execute the script
+          python db_check.py
       
-    - name: Run AWS capacity checker
-      run: |
-        echo "Running AWS capacity checker..."
-        python checkers/aws_capacity_checker.py
-        echo "AWS script exit code: $?"
-      continue-on-error: true
+      - name: Check script locations
+        run: |
+          echo "Finding checker script locations..."
+          find . -name "*capacity_checker.py" -type f | tee script_locations.txt
+          echo "Contents of current directory:"
+          ls -la
+          if [ -d "checkers" ]; then
+            echo "Contents of checkers directory:"
+            ls -la checkers/
+          fi
       
-    - name: Run Azure capacity checker
-      run: |
-        echo "Running Azure capacity checker..."
-        python checkers/azure_capacity_checker.py
-        echo "Azure script exit code: $?"
-      continue-on-error: true
+      - name: Run AWS capacity checker
+        run: |
+          echo "Running AWS capacity checker..."
+          # Use the correct path based on script location
+          if [ -f "aws_capacity_checker.py" ]; then
+            python aws_capacity_checker.py
+          elif [ -f "checkers/aws_capacity_checker.py" ]; then
+            python checkers/aws_capacity_checker.py
+          else
+            echo "AWS capacity checker script not found!"
+            cat script_locations.txt
+            exit 1
+          fi
+          if [ $? -ne 0 ]; then
+            echo "AWS script failed with exit code $?"
+          fi
       
-    - name: Run GCP capacity checker
-      run: |
-        echo "Running GCP capacity checker..."
-        python checkers/gcp_capacity_checker.py
-        echo "GCP script exit code: $?"
-      continue-on-error: true
+      - name: Run Azure capacity checker
+        run: |
+          echo "Running Azure capacity checker..."
+          # Use the correct path based on script location
+          if [ -f "azure_capacity_checker.py" ]; then
+            python azure_capacity_checker.py
+          elif [ -f "checkers/azure_capacity_checker.py" ]; then
+            python checkers/azure_capacity_checker.py
+          else
+            echo "Azure capacity checker script not found!"
+            cat script_locations.txt
+            exit 1
+          fi
+          if [ $? -ne 0 ]; then
+            echo "Azure script failed with exit code $?"
+          fi
       
-    - name: Report completion
-      if: always()
-      run: |
-        echo "GPU Checker job completed at $(date)"
+      - name: Run GCP capacity checker
+        run: |
+          echo "Running GCP capacity checker..."
+          # Use the correct path based on script location
+          if [ -f "gcp_capacity_checker.py" ]; then
+            python gcp_capacity_checker.py
+          elif [ -f "checkers/gcp_capacity_checker.py" ]; then
+            python checkers/gcp_capacity_checker.py
+          else
+            echo "GCP capacity checker script not found!"
+            cat script_locations.txt
+            exit 1
+          fi
+          if [ $? -ne 0 ]; then
+            echo "GCP script failed with exit code $?"
+          fi
+      
+      - name: Verify data was inserted
+        env:
+          MYSQL_HOST: ${{ secrets.MYSQL_HOST }}
+          MYSQL_PORT: ${{ secrets.MYSQL_PORT }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+        run: |
+          echo "import mysql.connector
+          import os
+          from datetime import datetime, timedelta
+          
+          db_config = {
+            'host': os.environ['MYSQL_HOST'],
+            'port': int(os.environ['MYSQL_PORT']),
+            'user': os.environ['MYSQL_USER'],
+            'password': os.environ['MYSQL_PASSWORD'],
+            'database': os.environ['MYSQL_DATABASE']
+          }
+          
+          # Get current date for comparison
+          today = datetime.now().date()
+          
+          try:
+            conn = mysql.connector.connect(**db_config)
+            cursor = conn.cursor()
+            
+            # Check for data inserted today in each table
+            tables = ['aws_gpu_instances', 'azure_gpu_instances', 'gcp_gpu_instances']
+            
+            for table in tables:
+              try:
+                cursor.execute(f'SELECT COUNT(*) FROM {table} WHERE DATE(check_time) = %s', (today,))
+                count = cursor.fetchone()[0]
+                print(f'{table}: {count} records inserted today')
+                
+                if count == 0:
+                  # If zero records today, check for any recent records
+                  cursor.execute(f'SELECT MAX(check_time) FROM {table}')
+                  last_record = cursor.fetchone()[0]
+                  if last_record:
+                    days_ago = (today - last_record.date()).days
+                    print(f'Last record in {table} was {days_ago} days ago on {last_record}')
+                  else:
+                    print(f'No records found in {table}')
+              except Exception as e:
+                print(f'Error checking {table}: {e}')
+            
+            cursor.close()
+            conn.close()
+          except Exception as e:
+            print(f'Database verification error: {e}')
+            exit(1)
+          " > verify_data.py
+          python verify_data.py
+      
+      - name: Report completion
+        if: always()
+        run: |
+          echo "GPU Checker job completed at $(date)"
